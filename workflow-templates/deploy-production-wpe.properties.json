@@ -1,0 +1,5 @@
+{
+  "name": "Deploy Production to WP Engine",
+  "description": "Deploy a production site to WP Engine Hosting",
+  "iconName": "wpe"
+}

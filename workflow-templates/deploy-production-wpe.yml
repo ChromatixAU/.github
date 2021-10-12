@@ -1,0 +1,84 @@
+name: Deploy - Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      WPE_USER: "WPE_USER"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "7.4"
+      - name: Composer Private Packags
+        run: composer config --global --auth http-basic.chromatix.repo.repman.io token ${{ secrets.REPMAN_TOKEN }}
+      - name: Composer Remove Packages
+        run: composer remove humanmade/s3-uploads
+      - name: Composer Install
+        uses: ramsey/composer-install@v1
+        with:
+          composer-options: "--no-dev"
+      - name: Prep Theme to Deploy
+        run: |
+          cd public_html/app/themes/theme
+          yarn
+          yarn prod
+          rm -rf node_modules/
+          rm -f .eslintrc
+          rm -f .eslintrc.js
+          rm -f .gitignore
+          rm -f .stylelintrc.js
+          rm -f .stylelintignore
+          rm -f yarn.lock
+          rm -f package.json
+          rm -rf sass/
+          rm -rf js/
+      - name: Deploy Core
+        uses: burnett01/rsync-deployments@4.1
+        with:
+          switches: -avzr --delete --exclude="wp-content/plugins/" --exclude="vendor/" --exclude="wp-content/themes/" --exclude="wp-content/mu-plugins/" --exclude="wp-content/uploads/" --exclude="wp-config.php" --include="" --filter=""
+          path: public_html/wp/
+          remote_path: /home/wpe-user/sites/${{ env.WPE_USER }}
+          remote_host: ${{ env.WPE_USER }}.ssh.wpengine.net
+          remote_user: ${{ env.WPE_USER }}
+          remote_key: ${{ secrets.CHROMATIX_SERVICES_PRIVATE }}
+      - name: Deploy mu plugins
+        uses: burnett01/rsync-deployments@4.1
+        with:
+          switches: -avzr --delete --exclude="wpengine-common" --exclude="force-strong-passwords" --exclude="wpe-wp-sign-on-plugin" --exclude="wpe-elasticpress-autosuggest-logger" --exclude="mu-plugin.php" --exclude="slt-force-strong-passwords.php" --exclude="stop-long-comments.php" --exclude="wpe-wp-sign-on-plugin.php" --exclude="wpengine-security-auditor.php" --exclude="wpe-elasticpress-autosuggest-logger.php"
+          path: public_html/app/mu-plugins/
+          remote_path: /home/wpe-user/sites/${{ env.WPE_USER }}/wp-content/mu-plugins/
+          remote_host: ${{ env.WPE_USER }}.ssh.wpengine.net
+          remote_user: ${{ env.WPE_USER }}
+          remote_key: ${{ secrets.CHROMATIX_SERVICES_PRIVATE }}
+      - name: Deploy Theme
+        uses: burnett01/rsync-deployments@4.1
+        with:
+          switches: -avzr --delete
+          path: public_html/app/themes/theme/
+          remote_path: /home/wpe-user/sites/${{ env.WPE_USER }}/wp-content/themes/theme/
+          remote_host: ${{ env.WPE_USER }}.ssh.wpengine.net
+          remote_user: ${{ env.WPE_USER }}
+          remote_key: ${{ secrets.CHROMATIX_SERVICES_PRIVATE }}
+      - name: Deploy vendor
+        uses: burnett01/rsync-deployments@4.1
+        with:
+          switches: -avzr --delete --exclude="app/uploads" --include="" --filter=""
+          path: vendor/
+          remote_path: /home/wpe-user/sites/${{ env.WPE_USER }}/vendor/
+          remote_host: ${{ env.WPE_USER }}.ssh.wpengine.net
+          remote_user: ${{ env.WPE_USER }}
+          remote_key: ${{ secrets.CHROMATIX_SERVICES_PRIVATE }}
+      - name: Bust Cache
+        uses: indiesdev/curl@v1
+        with:
+          url: https://api.wpengineapi.com/installs/${{ env.WPE_USER }}/purge_cache
+          method: 'POST'
+          basic-auth: ${{ secrets.WP_ENGINE_AUTH }}
